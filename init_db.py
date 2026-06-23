@@ -11,9 +11,9 @@ with app.app_context():
     # Импортируем модели после создания таблиц
     from app import Courier
     
-    # Создаем администратора
-    login = os.environ.get('ADMIN_LOGIN', 'The_Best_Admin')
-    password = os.environ.get('ADMIN_PASSWORD', 'HG10P4NC91')
+    # Берем данные из переменных окружения (как и в основном коде)
+    login = os.environ.get('ADMIN_LOGIN', 'admin')
+    password = os.environ.get('ADMIN_PASSWORD', 'admin123')
     
     admin = Courier.query.filter_by(is_admin=True).first()
     if not admin:
