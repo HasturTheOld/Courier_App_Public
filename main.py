@@ -882,27 +882,22 @@ def init_db():
 # ЗАПУСК
 # ============================================
 if __name__ == '__main__':
+# ИНИЦИАЛИЗАЦИЯ ДЛЯ GUNICORN (ПРОД)
+with app.app_context():
+    init_db()
+    db.create_all()
+    create_admin_if_not_exists()
+    logger.info("[OK] База данных инициализирована в проде")
+
+if __name__ == '__main__':
+    # ЛОКАЛЬНЫЙ ЗАПУСК
     try:
         with app.app_context():
             init_db()
-            # ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ
             db.create_all()
-            logger.info("[OK] Таблицы созданы (или уже существуют)")
-            
-            # Создание администратора
             create_admin_if_not_exists()
-            
-            logger.info("[OK] База данных инициализирована")
-            logger.info("[START] Сервер запускается...")
-            logger.info("[URL] Откройте: http://localhost:5000")
-            print("\n" + "=" * 50)
-            print("[OK] База данных инициализирована")
-            print("[START] Сервер запускается...")
-            print("[URL] Откройте: http://localhost:5000")
-            print("=" * 50 + "\n")
-        
         app.run(debug=DEBUG, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
-        print(f"\n[ERROR] Ошибка запуска: {e}\n")
+
