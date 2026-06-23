@@ -113,6 +113,22 @@ except Exception as e:
 
 db = SQLAlchemy(app)
 
+with app.app_context():
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if not inspector.has_table('courier'):
+            logger.info("[WARN] Таблицы не найдены, создаем...")
+            db.create_all()
+            logger.info("[OK] Все таблицы созданы")
+        else:
+            logger.info("[OK] Таблицы уже существуют")
+        
+        # Создаем администратора
+        create_admin_if_not_exists()
+    except Exception as e:
+        logger.error(f"[ERROR] Ошибка инициализации: {e}")
+
 # ============================================
 # МОДЕЛИ
 # ============================================
