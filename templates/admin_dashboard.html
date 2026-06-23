@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель администратора</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 0.5rem;
+        }
+        .photo-grid img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 0.5rem;
+        }
+        @media (max-width: 640px) {
+            .photo-grid {
+                grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            }
+            .photo-grid img {
+                height: 80px;
+            }
+        }
+        .modal.hidden {
+            display: none;
+        }
+        .modal:not(.hidden) {
+            display: flex;
+        }
+        .folder-tag {
+            background-color: #dbeafe;
+            color: #1e40af;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            margin: 0.125rem;
+        }
+        .folder-tag i {
+            margin-right: 0.25rem;
+        }
+        .photo-sort-btn {
+            transition: all 0.2s;
+        }
+        .photo-sort-btn:hover {
+            background-color: #f3f4f6;
+        }
+        .photo-sort-btn.active {
+            background-color: #dbeafe;
+            color: #1e40af;
+            border-color: #3b82f6;
+        }
+        .search-input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .clear-search {
+            transition: all 0.2s;
+        }
+        .clear-search:hover {
+            color: #dc2626;
+        }
+        .photo-item {
+            transition: transform 0.2s;
+        }
+        .photo-item:hover {
+            transform: scale(1.02);
+        }
+        .courier-checkbox:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-truck text-blue-500 text-xl mr-2"></i>
+                    <span class="text-xl font-semibold text-gray-800">CKC</span>
+                    <span class="ml-3 bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full">Admin</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600 text-sm hidden sm:inline">
+                        <i class="fas fa-user mr-1"></i>Администратор
+                    </span>
+                    <a href="/logout" class="text-red-500 hover:text-red-700 text-sm font-medium">
+                        <i class="fas fa-sign-out-alt"></i> Выйти
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <h2 class="text-2xl font-bold mb-6">Панель администратора</h2>
+        
+        <!-- Создание папки -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <h3 class="text-lg font-semibold mb-4">
+                <i class="fas fa-folder-plus text-green-500 mr-2"></i>Создать папку
+            </h3>
+            <form id="createFolderForm" class="space-y-4">
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="text" id="folderName" placeholder="Название папки" required
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select id="folderCity"
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Без города (опционально)</option>
+                        {% for city in cities %}
+                        <option value="{{ city }}">{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" onclick="toggleCourierSelection()" 
+                            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition font-medium whitespace-nowrap">
+                        <i class="fas fa-users mr-2"></i>Выбрать курьеров
+                    </button>
+                    <button type="submit" 
+                            class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg transition font-medium whitespace-nowrap">
+                        <i class="fas fa-plus mr-2"></i>Создать
+                    </button>
+                </div>
+                
+                <!-- Блок выбора курьеров -->
+                <div id="courierSelection" class="hidden p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-medium text-gray-700">
+                            <i class="fas fa-user-check mr-1"></i>Выберите курьеров для назначения папки:
+                            <span class="text-red-500 text-xs ml-1">* обязательно выбрать минимум 1</span>
+                        </h4>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="selectAllCouriers()" 
+                                    class="text-xs text-blue-600 hover:text-blue-800">
+                                Выбрать всех
+                            </button>
+                            <button type="button" onclick="deselectAllCouriers()" 
+                                    class="text-xs text-gray-500 hover:text-gray-700">
+                                Снять всех
+                            </button>
+                        </div>
+                    </div>
+                    <div id="courierCheckboxes" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+                        <!-- Чекбоксы будут добавлены через JavaScript -->
+                    </div>
+                    <div id="courierError" class="text-red-500 text-sm mt-2 hidden">
+                        <i class="fas fa-exclamation-circle mr-1"></i>Выберите хотя бы одного курьера!
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Город можно не выбирать, папка будет назначена выбранным курьерам
+                    </p>
+                </div>
+            </form>
+        </div>
+
+        <!-- Управление курьерами -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h3 class="text-lg font-semibold">
+                    <i class="fas fa-users text-blue-500 mr-2"></i>Курьеры 
+                    <span class="text-sm font-normal text-gray-500">({{ couriers|length }})</span>
+                </h3>
+                
+                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <!-- ПОИСК ПО ФАМИЛИИ -->
+                    <div class="relative">
+                        <form id="searchForm" class="flex items-center gap-2" method="GET" action="/admin/dashboard">
+                            <div class="relative">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                                <input type="text" 
+                                       id="searchInput" 
+                                       name="search" 
+                                       placeholder="Поиск по фамилии..." 
+                                       value="{{ search_query }}"
+                                       class="search-input pl-9 pr-8 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none w-40 sm:w-48">
+                                {% if search_query %}
+                                <a href="/admin/dashboard?city={{ current_city }}&photo_sort={{ current_photo_sort }}" 
+                                   class="clear-search absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-red-500 text-xs"
+                                   title="Очистить поиск">
+                                    <i class="fas fa-times"></i>
+                                </a>
+                                {% endif %}
+                            </div>
+                            <button type="submit" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm transition whitespace-nowrap">
+                                <i class="fas fa-search mr-1"></i>Найти
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- ФИЛЬТР ПО ГОРОДУ -->
+                    <select id="cityFilter" onchange="applyFilters()"
+                            class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="all">Все города</option>
+                        {% for city in cities %}
+                        <option value="{{ city }}" {% if current_city == city %}selected{% endif %}>{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Результат поиска -->
+            {% if search_query %}
+            <div class="mb-3 p-2 bg-blue-50 rounded-lg text-sm text-blue-700 border border-blue-200 flex items-center justify-between">
+                <span>
+                    <i class="fas fa-search mr-1"></i>
+                    Результаты поиска: <span class="font-semibold">{{ search_query }}</span>
+                    (найдено: <span class="font-semibold">{{ couriers|length }}</span>)
+                </span>
+                <a href="/admin/dashboard?city={{ current_city }}&photo_sort={{ current_photo_sort }}" 
+                   class="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                    <i class="fas fa-times mr-1"></i>Очистить
+                </a>
+            </div>
+            {% endif %}
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Курьер</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Город</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Папки</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for courier in couriers %}
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-4 py-3">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0 h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-user text-blue-500 text-sm"></i>
+                                    </div>
+                                    <div class="ml-3">
+                                        <div class="text-sm font-medium text-gray-900">
+                                            {{ courier.first_name }} {{ courier.last_name }}
+                                            {% if search_query and search_query.lower() in courier.last_name.lower() %}
+                                            <span class="bg-yellow-200 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded ml-1">
+                                                <i class="fas fa-check-circle text-[10px]"></i> совпадение
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-xs">{{ courier.city }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap gap-1">
+                                    {% set assigned = courier_folders.get(courier.id, []) %}
+                                    {% if assigned %}
+                                        {% for folder in folders %}
+                                            {% if folder.id in assigned %}
+                                            <span class="folder-tag">
+                                                <i class="fas fa-folder"></i>{{ folder.name }}
+                                            </span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-xs text-gray-400">Нет папок</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <button onclick="showAssignModal('{{ courier.id }}', '{{ courier.first_name }} {{ courier.last_name }}', '{{ courier.city }}')" 
+                                        class="text-blue-600 hover:text-blue-900 font-medium text-sm">
+                                    <i class="fas fa-edit mr-1"></i>Назначить
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                {% if not couriers %}
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fas fa-users text-4xl mb-2"></i>
+                    {% if search_query %}
+                    <p>Курьеры с фамилией "<span class="font-semibold">{{ search_query }}</span>" не найдены</p>
+                    {% else %}
+                    <p>Нет зарегистрированных курьеров</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Все фотографии -->
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h3 class="text-lg font-semibold">
+                    <i class="fas fa-images text-purple-500 mr-2"></i>
+                    {% if search_query and found_courier %}
+                        Фотографии курьера: <span class="text-blue-600">{{ found_courier.last_name }}</span>
+                        <span class="text-sm font-normal text-gray-500">({{ total_photos }} фото)</span>
+                    {% elif search_query %}
+                        Фотографии курьера: <span class="text-blue-600">{{ search_query }}</span>
+                        <span class="text-sm font-normal text-gray-500">({{ total_photos }} фото)</span>
+                    {% else %}
+                        Все фотографии
+                        <span class="text-sm font-normal text-gray-500">({{ total_photos }} фото)</span>
+                    {% endif %}
+                </h3>
+                
+                <!-- Сортировка фото: новые/старые -->
+                <div class="flex flex-wrap gap-2">
+                    <span class="text-sm text-gray-600 flex items-center mr-1">
+                        <i class="fas fa-sort mr-1"></i>Сортировать:
+                    </span>
+                    <a href="?photo_sort=date_desc&city={{ current_city }}&search={{ search_query }}" 
+                       class="photo-sort-btn px-3 py-1 text-sm rounded-lg border {% if current_photo_sort == 'date_desc' %}active bg-blue-100 text-blue-700 border-blue-300{% else %}border-gray-300 hover:bg-gray-50{% endif %}">
+                        <i class="fas fa-calendar"></i> Новые
+                    </a>
+                    <a href="?photo_sort=date_asc&city={{ current_city }}&search={{ search_query }}" 
+                       class="photo-sort-btn px-3 py-1 text-sm rounded-lg border {% if current_photo_sort == 'date_asc' %}active bg-blue-100 text-blue-700 border-blue-300{% else %}border-gray-300 hover:bg-gray-50{% endif %}">
+                        <i class="fas fa-calendar"></i> Старые
+                    </a>
+                    {% if search_query %}
+                    <a href="/admin/dashboard?city={{ current_city }}&photo_sort={{ current_photo_sort }}" 
+                       class="photo-sort-btn px-3 py-1 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-600">
+                        <i class="fas fa-times"></i> Показать все
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Информация о найденном курьере -->
+            {% if search_query and found_courier %}
+                <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-user text-green-600"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-800">
+                                {{ found_courier.first_name }} {{ found_courier.last_name }}
+                            </p>
+                            <p class="text-xs text-gray-500">
+                                <i class="fas fa-city mr-1"></i>{{ found_courier.city }}
+                                <span class="mx-2">|</span>
+                                <i class="fas fa-folder mr-1"></i>{{ courier_folders.get(found_courier.id, [])|length }} папок
+                                <span class="mx-2">|</span>
+                                <i class="fas fa-images mr-1"></i>{{ total_photos }} фото
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+            
+            {% if photos_by_folder %}
+                {% for folder_id, photos in photos_by_folder.items() %}
+                    {% set folder = folders|selectattr('id', 'equalto', folder_id)|first %}
+                    {% if folder %}
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-md font-medium text-gray-700">
+                                <i class="fas fa-folder text-yellow-500 mr-1"></i>
+                                {{ folder.name }}
+                                <span class="text-sm font-normal text-gray-500">({{ photos|length }} фото)</span>
+                            </h4>
+                            <span class="text-xs text-gray-400">{{ folder.city }}</span>
+                        </div>
+                        <div class="photo-grid">
+                            {% for photo in photos %}
+                            <div class="relative group bg-gray-100 rounded-lg overflow-hidden photo-item">
+                                <img src="{{ url_for('static', filename=photo.filepath) }}" 
+                                     alt="{{ photo.filename }}"
+                                     loading="lazy">
+                                <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1">
+                                    {% if photo.courier %}
+                                    <span>{{ photo.courier.last_name }} ({{ photo.courier.city }})</span>
+                                    {% else %}
+                                    <span>Курьер не найден</span>
+                                    {% endif %}
+                                </div>
+                                <div class="absolute top-1 left-1 bg-black bg-opacity-50 text-white text-[10px] px-1.5 py-0.5 rounded truncate max-w-[80px]">
+                                    {{ photo.uploaded_at.strftime('%d.%m.%Y') }}
+                                </div>
+                                <button onclick="deletePhoto('{{ photo.id }}')" 
+                                        class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-xs">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+            <div class="text-center text-gray-500 py-8">
+                <i class="fas fa-camera text-4xl mb-2"></i>
+                {% if search_query and found_courier %}
+                <p>У курьера <span class="font-semibold">{{ found_courier.last_name }}</span> нет загруженных фотографий</p>
+                <p class="text-sm mt-1">Курьер еще не загрузил ни одного фото</p>
+                {% elif search_query %}
+                <p>Курьер с фамилией "<span class="font-semibold">{{ search_query }}</span>" не найден</p>
+                {% else %}
+                <p>Нет загруженных фотографий</p>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <!-- Модальное окно назначения папок -->
+    <div id="assignModal" class="modal hidden fixed inset-0 bg-gray-600 bg-opacity-50 items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <h3 class="text-lg font-semibold mb-2">Назначить папки для <span id="courierName" class="text-blue-600"></span></h3>
+            <p class="text-sm text-gray-500 mb-4">Город: <span id="courierCity" class="font-medium"></span></p>
+            <p class="text-xs text-gray-400 mb-3"><i class="fas fa-info-circle mr-1"></i>Только папки для этого города</p>
+            
+            <form id="assignForm">
+                <input type="hidden" id="assignCourierId" name="courier_id">
+                <div class="space-y-2 max-h-60 overflow-y-auto" id="folderCheckboxes"></div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeModal()" 
+                            class="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg transition">
+                        Отмена
+                    </button>
+                    <button type="submit" 
+                            class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition font-medium">
+                        Сохранить
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Скрытые данные для JavaScript -->
+    <div id="foldersData" style="display:none;">{{ folders_json }}</div>
+    <div id="courierFoldersData" style="display:none;">{{ courier_folders_json }}</div>
+    <div id="couriersData" style="display:none;">{{ couriers_json }}</div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // ============================================
+        // 1. ПОЛУЧЕНИЕ ДАННЫХ ИЗ СКРЫТЫХ ЭЛЕМЕНТОВ
+        // ============================================
+        var allFolders = [];
+        var courierFolders = {};
+        var allCouriers = [];
+        var selectedCouriers = [];
+        
+        try {
+            var foldersStr = document.getElementById('foldersData').textContent;
+            var courierStr = document.getElementById('courierFoldersData').textContent;
+            var couriersStr = document.getElementById('couriersData').textContent;
+            
+            if (foldersStr && foldersStr.trim() !== '') {
+                allFolders = JSON.parse(foldersStr);
+            }
+            if (courierStr && courierStr.trim() !== '') {
+                courierFolders = JSON.parse(courierStr);
+            }
+            if (couriersStr && couriersStr.trim() !== '') {
+                allCouriers = JSON.parse(couriersStr);
+            }
+        } catch(e) {
+            console.log('Error parsing data:', e);
+            allFolders = [];
+            courierFolders = {};
+            allCouriers = [];
+        }
+
+        // ============================================
+        // 2. ПОИСК ПО ФАМИЛИИ
+        // ============================================
+        var searchForm = document.getElementById('searchForm');
+        if (searchForm) {
+            searchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                var searchValue = document.getElementById('searchInput').value.trim();
+                var city = document.getElementById('cityFilter').value;
+                var photoSort = '{{ current_photo_sort }}';
+                
+                var url = '/admin/dashboard?';
+                var params = [];
+                
+                if (searchValue) {
+                    params.push('search=' + encodeURIComponent(searchValue));
+                }
+                if (city && city !== 'all') {
+                    params.push('city=' + encodeURIComponent(city));
+                }
+                if (photoSort) {
+                    params.push('photo_sort=' + encodeURIComponent(photoSort));
+                }
+                
+                url += params.join('&');
+                window.location.href = url;
+            });
+        }
+
+        // Обработка Enter в поле поиска
+        var searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    var form = document.getElementById('searchForm');
+                    if (form) {
+                        form.dispatchEvent(new Event('submit'));
+                    }
+                }
+            });
+        }
+
+        // ============================================
+        // 3. ФИЛЬТР ПО ГОРОДУ
+        // ============================================
+        function applyFilters() {
+            var city = document.getElementById('cityFilter').value;
+            var photoSort = '{{ current_photo_sort }}';
+            var search = document.getElementById('searchInput') ? document.getElementById('searchInput').value.trim() : '';
+            
+            var url = '/admin/dashboard?city=' + city + '&photo_sort=' + photoSort;
+            if (search) {
+                url += '&search=' + encodeURIComponent(search);
+            }
+            window.location.href = url;
+        }
+
+        // ============================================
+        // 4. ВЫБОР КУРЬЕРОВ ПРИ СОЗДАНИИ ПАПКИ
+        // ============================================
+        function toggleCourierSelection() {
+            var selectionDiv = document.getElementById('courierSelection');
+            if (selectionDiv.classList.contains('hidden')) {
+                selectionDiv.classList.remove('hidden');
+                loadCourierCheckboxes();
+            } else {
+                selectionDiv.classList.add('hidden');
+            }
+        }
+
+        function loadCourierCheckboxes() {
+            var container = document.getElementById('courierCheckboxes');
+            var city = document.getElementById('folderCity').value;
+            container.innerHTML = '';
+            selectedCouriers = [];
+            
+            var availableCouriers = allCouriers;
+            if (city && city !== '') {
+                availableCouriers = allCouriers.filter(function(c) {
+                    return c.city === city;
+                });
+            }
+            
+            if (availableCouriers.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-500 col-span-full text-center py-4">' +
+                    (city ? 'Нет курьеров в выбранном городе' : 'Нет зарегистрированных курьеров') +
+                    '</p>';
+                document.getElementById('courierError').classList.add('hidden');
+                return;
+            }
+            
+            availableCouriers.forEach(function(courier) {
+                var div = document.createElement('div');
+                div.className = 'flex items-center p-2 hover:bg-gray-100 rounded-lg transition';
+                
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = 'courier_' + courier.id;
+                checkbox.className = 'courier-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500';
+                checkbox.value = courier.id;
+                checkbox.checked = true;
+                checkbox.addEventListener('change', function() {
+                    updateSelectedCouriers();
+                    validateCourierSelection();
+                });
+                
+                var label = document.createElement('label');
+                label.htmlFor = 'courier_' + courier.id;
+                label.className = 'ml-2 text-sm text-gray-700 cursor-pointer flex-1';
+                label.textContent = courier.first_name + ' ' + courier.last_name + ' (' + courier.city + ')';
+                
+                div.appendChild(checkbox);
+                div.appendChild(label);
+                container.appendChild(div);
+            });
+            
+            updateSelectedCouriers();
+            validateCourierSelection();
+        }
+
+        function updateSelectedCouriers() {
+            var checkboxes = document.querySelectorAll('.courier-checkbox:checked');
+            selectedCouriers = [];
+            checkboxes.forEach(function(cb) {
+                selectedCouriers.push(parseInt(cb.value));
+            });
+        }
+
+        function validateCourierSelection() {
+            var errorDiv = document.getElementById('courierError');
+            if (selectedCouriers.length === 0) {
+                errorDiv.classList.remove('hidden');
+                return false;
+            } else {
+                errorDiv.classList.add('hidden');
+                return true;
+            }
+        }
+
+        function selectAllCouriers() {
+            document.querySelectorAll('.courier-checkbox').forEach(function(cb) {
+                cb.checked = true;
+            });
+            updateSelectedCouriers();
+            validateCourierSelection();
+        }
+
+        function deselectAllCouriers() {
+            document.querySelectorAll('.courier-checkbox').forEach(function(cb) {
+                cb.checked = false;
+            });
+            updateSelectedCouriers();
+            validateCourierSelection();
+        }
+
+        // Обновляем список курьеров при смене города
+        document.getElementById('folderCity').addEventListener('change', function() {
+            if (!document.getElementById('courierSelection').classList.contains('hidden')) {
+                loadCourierCheckboxes();
+            }
+        });
+
+        // ============================================
+        // 5. СОЗДАНИЕ ПАПКИ
+        // ============================================
+        document.getElementById('createFolderForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            var folderName = document.getElementById('folderName').value.trim();
+            var folderCity = document.getElementById('folderCity').value;
+            
+            if (!folderName) {
+                alert('Введите название папки');
+                return;
+            }
+            
+            if (selectedCouriers.length === 0) {
+                alert('Выберите хотя бы одного курьера для назначения папки!');
+                document.getElementById('courierError').classList.remove('hidden');
+                return;
+            }
+            
+            var formData = new FormData();
+            formData.append('folder_name', folderName);
+            if (folderCity) {
+                formData.append('folder_city', folderCity);
+            }
+            
+            selectedCouriers.forEach(function(id) {
+                formData.append('courier_ids[]', id);
+            });
+            
+            $.ajax({
+                url: '/admin/create_folder',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message + ' (назначено ' + response.assigned_couriers + ' курьерам)');
+                        location.reload();
+                    } else {
+                        alert('Ошибка: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    var errorMsg = 'Ошибка при создании папки';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    alert(errorMsg);
+                }
+            });
+        });
+
+        // ============================================
+        // 6. НАЗНАЧЕНИЕ ПАПОК
+        // ============================================
+        function showAssignModal(courierId, courierName, courierCity) {
+            document.getElementById('courierName').textContent = courierName;
+            document.getElementById('courierCity').textContent = courierCity;
+            document.getElementById('assignCourierId').value = courierId;
+            
+            var container = document.getElementById('folderCheckboxes');
+            container.innerHTML = '';
+            
+            var assigned = courierFolders[courierId] || [];
+            var availableFolders = [];
+            
+            for (var i = 0; i < allFolders.length; i++) {
+                if (allFolders[i].city === courierCity || allFolders[i].city === null || allFolders[i].city === '') {
+                    availableFolders.push(allFolders[i]);
+                }
+            }
+            
+            if (availableFolders.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-500 py-4"><p>Нет доступных папок для города ' + courierCity + '</p></div>';
+            } else {
+                for (var j = 0; j < availableFolders.length; j++) {
+                    var folder = availableFolders[j];
+                    var div = document.createElement('div');
+                    div.className = 'flex items-center py-1.5 hover:bg-gray-50 rounded px-2';
+                    
+                    var checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = 'folder_' + folder.id;
+                    checkbox.name = 'folder_ids[]';
+                    checkbox.value = folder.id;
+                    checkbox.checked = (assigned.indexOf(folder.id) !== -1);
+                    checkbox.className = 'rounded border-gray-300 text-blue-600 focus:ring-blue-500';
+                    
+                    var label = document.createElement('label');
+                    label.htmlFor = 'folder_' + folder.id;
+                    label.className = 'ml-2 text-sm text-gray-700 cursor-pointer flex-1';
+                    label.textContent = folder.name + (folder.city ? ' (' + folder.city + ')' : '');
+                    
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    container.appendChild(div);
+                }
+            }
+            
+            document.getElementById('assignModal').classList.remove('hidden');
+            document.getElementById('assignModal').classList.add('flex');
+        }
+
+        function closeModal() {
+            document.getElementById('assignModal').classList.add('hidden');
+            document.getElementById('assignModal').classList.remove('flex');
+        }
+
+        // ============================================
+        // 7. НАЗНАЧЕНИЕ ПАПОК (отправка формы)
+        // ============================================
+        document.getElementById('assignForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            var formData = new FormData(this);
+            
+            $.ajax({
+                url: '/admin/assign_folders',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message);
+                        location.reload();
+                    } else {
+                        alert('Ошибка: ' + response.error);
+                    }
+                },
+                error: function() {
+                    alert('Ошибка при назначении папок');
+                }
+            });
+        });
+
+        // ============================================
+        // 8. УДАЛЕНИЕ ФОТО
+        // ============================================
+        function deletePhoto(photoId) {
+            if (!confirm('Удалить фото?')) return;
+            
+            $.ajax({
+                url: '/admin/delete_photo/' + photoId,
+                type: 'DELETE',
+                success: function(response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Ошибка: ' + response.error);
+                    }
+                },
+                error: function() {
+                    alert('Ошибка при удалении');
+                }
+            });
+        }
+
+        // ============================================
+        // 9. ЗАКРЫТИЕ МОДАЛЬНОГО ОКНА
+        // ============================================
+        document.getElementById('assignModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        console.log('✅ Admin dashboard загружен');
+    </script>
+</body>
+</html>

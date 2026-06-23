@@ -1,0 +1,29 @@
+# Секреты
+.env
+.env.local
+.env.production
+
+# База данных
+*.db
+*.sqlite
+instance/
+
+# Загруженные фото
+static/uploads/*
+!static/uploads/.gitkeep
+
+# Логи
+*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
