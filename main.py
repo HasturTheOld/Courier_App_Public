@@ -873,35 +873,23 @@ def handle_exception(e):
 def init_db():
     """Инициализация базы данных при запуске"""
     try:
+        # ИНИЦИАЛИЗАЦИЯ ДЛЯ GUNICORN (ПРОД)
         with app.app_context():
-            # Проверяем и создаем таблицы
-            from sqlalchemy import inspect
-            inspector = inspect(db.engine)
-            if not inspector.has_table('courier'):
-                logger.info("[WARN] Таблицы не найдены, создаем...")
-                db.create_all()
-                logger.info("[OK] Все таблицы созданы")
-            else:
-                logger.info("[OK] Таблицы уже существуют")
-            
-            # Создаем администратора
+            init_db()
+            db.create_all()
             create_admin_if_not_exists()
-            
-            logger.info("[OK] База данных инициализирована")
-            return True
-    except Exception as e:
-        logger.error(f"[ERROR] Ошибка инициализации базы данных: {e}")
-        logger.error(traceback.format_exc())
-        return False
+            logger.info("[OK] База данных инициализирована в проде")
 
-# ============================================
-# ЗАПУСК
-# ============================================
+
+# ЛОКАЛЬНЫЙ ЗАПУСК
 if __name__ == '__main__':
     try:
         with app.app_context():
             init_db()
+            db.create_all()
+            create_admin_if_not_exists()
         app.run(debug=DEBUG, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
+
