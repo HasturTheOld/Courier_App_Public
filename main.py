@@ -884,6 +884,7 @@ def init_db():
 if __name__ == '__main__':
     try:
         with app.app_context():
+            init_db()
             # ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ
             db.create_all()
             logger.info("[OK] Таблицы созданы (или уже существуют)")
