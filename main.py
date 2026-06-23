@@ -883,8 +883,15 @@ def init_db():
 # ============================================
 if __name__ == '__main__':
     try:
-        # Инициализация базы данных
-        if init_db():
+        with app.app_context():
+            # ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ
+            db.create_all()
+            logger.info("[OK] Таблицы созданы (или уже существуют)")
+            
+            # Создание администратора
+            create_admin_if_not_exists()
+            
+            logger.info("[OK] База данных инициализирована")
             logger.info("[START] Сервер запускается...")
             logger.info("[URL] Откройте: http://localhost:5000")
             print("\n" + "=" * 50)
@@ -892,11 +899,8 @@ if __name__ == '__main__':
             print("[START] Сервер запускается...")
             print("[URL] Откройте: http://localhost:5000")
             print("=" * 50 + "\n")
-            
-            app.run(debug=DEBUG, host='0.0.0.0', port=5000)
-        else:
-            logger.error("[ERROR] Не удалось инициализировать базу данных")
-            print("[ERROR] Не удалось инициализировать базу данных")
+        
+        app.run(debug=DEBUG, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
