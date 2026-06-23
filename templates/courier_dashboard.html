@@ -158,7 +158,7 @@
                 <div class="photo-grid">
                     {% for photo in folder_data.photos %}
                     <div class="photo-item bg-gray-100 rounded-lg overflow-hidden relative group">
-                        <img src="{{ url_for('static', filename=photo.filepath) }}" 
+                        <img src="{{ photo.filepath }}"  
                              alt="{{ photo.filename }}"
                              loading="lazy">
                         <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-2">
