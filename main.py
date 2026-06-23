@@ -9,8 +9,6 @@ import shutil
 import logging
 import traceback
 import sys
-import signal
-import time
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from dotenv import load_dotenv
@@ -21,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
-# НАСТРОЙКА КОДИРОВКИ ДЛЯ WINDOWS
+# НАСТРОЙКА КОДИРОВКИ
 # ============================================
 if sys.platform == 'win32':
     try:
@@ -38,30 +36,23 @@ if sys.platform == 'win32':
 app = Flask(__name__)
 
 # ============================================
-# ЗАГРУЗКА НАСТРОЕК ИЗ .env
+# НАСТРОЙКИ ИЗ .env
 # ============================================
-
-# Секретный ключ
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-
-# Настройки базы данных
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///couriers.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Настройки загрузки
 app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'static/uploads')
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Режим отладки
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-# Данные администратора из .env
+# Данные администратора из .env (НЕ В КОДЕ!)
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # ============================================
-# НАСТРОЙКА ЛОГИРОВАНИЯ
+# ЛОГИРОВАНИЕ
 # ============================================
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -77,33 +68,7 @@ except Exception as e:
     print(f"[WARN] Не удалось создать файл логов: {e}")
 
 # ============================================
-# ОБРАБОТЧИКИ СИГНАЛОВ
-# ============================================
-def safe_exit_handler(signum, frame):
-    """Безопасный выход при сигнале"""
-    try:
-        logger.info("[STOP] Получен сигнал завершения, безопасный выход...")
-        db.session.close()
-    except:
-        pass
-    sys.exit(0)
-
-try:
-    signal.signal(signal.SIGINT, safe_exit_handler)
-    signal.signal(signal.SIGTERM, safe_exit_handler)
-except:
-    pass
-
-def check_for_recursion():
-    """Проверка на рекурсию"""
-    import sys
-    if sys.getrecursionlimit() < 10000:
-        sys.setrecursionlimit(10000)
-
-check_for_recursion()
-
-# ============================================
-# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+# СОЗДАНИЕ ПАПКИ ДЛЯ ЗАГРУЗОК
 # ============================================
 try:
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -112,22 +77,6 @@ except Exception as e:
     logger.error(f"[ERROR] Ошибка создания папки загрузок: {e}")
 
 db = SQLAlchemy(app)
-
-with app.app_context():
-    try:
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        if not inspector.has_table('courier'):
-            logger.info("[WARN] Таблицы не найдены, создаем...")
-            db.create_all()
-            logger.info("[OK] Все таблицы созданы")
-        else:
-            logger.info("[OK] Таблицы уже существуют")
-        
-        # Создаем администратора
-        create_admin_if_not_exists()
-    except Exception as e:
-        logger.error(f"[ERROR] Ошибка инициализации: {e}")
 
 # ============================================
 # МОДЕЛИ
@@ -223,32 +172,12 @@ def safe_create_directory(path):
         logger.error(f"Error creating directory {path}: {e}")
         return False
 
-def get_safe_courier(courier_id):
-    try:
-        if not courier_id:
-            return None
-        courier = Courier.query.get(int(courier_id))
-        if not courier:
-            logger.warning(f"Courier with id {courier_id} not found")
-        return courier
-    except (ValueError, TypeError) as e:
-        logger.error(f"Invalid courier_id: {courier_id}, error: {e}")
-        return None
-
 # ============================================
-# СОЗДАНИЕ АДМИНИСТРАТОРА И ТАБЛИЦ (ИСПРАВЛЕНО)
+# ФУНКЦИЯ СОЗДАНИЯ АДМИНИСТРАТОРА
 # ============================================
 def create_admin_if_not_exists():
     """Создает администратора из .env если его нет"""
     try:
-        # Проверяем, существует ли таблица courier
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        if not inspector.has_table('courier'):
-            logger.info("[WARN] Таблица courier не найдена, создаем все таблицы...")
-            db.create_all()
-            logger.info("[OK] Все таблицы созданы")
-        
         admin = Courier.query.filter_by(is_admin=True).first()
         if not admin:
             hashed_password = generate_password_hash(ADMIN_PASSWORD)
@@ -261,13 +190,44 @@ def create_admin_if_not_exists():
             )
             db.session.add(admin)
             db.session.commit()
-            logger.info(f"[OK] Администратор создан: {ADMIN_LOGIN}")
-            print(f"[OK] Администратор создан: {ADMIN_LOGIN}")
+            logger.info(f"[OK] Администратор создан")
+            print(f"[OK] Администратор создан")
             return True
         return False
     except Exception as e:
         logger.error(f"[ERROR] Ошибка создания администратора: {e}")
         return False
+
+# ============================================
+# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+# ============================================
+def init_db():
+    """Создает таблицы и администратора при запуске"""
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        
+        if not inspector.has_table('courier'):
+            logger.info("[WARN] Таблицы не найдены, создаем...")
+            db.create_all()
+            logger.info("[OK] Все таблицы созданы")
+        else:
+            logger.info("[OK] Таблицы уже существуют")
+        
+        create_admin_if_not_exists()
+        
+        logger.info("[OK] База данных инициализирована")
+        return True
+    except Exception as e:
+        logger.error(f"[ERROR] Ошибка инициализации базы данных: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
+# ============================================
+# ЗАПУСК ИНИЦИАЛИЗАЦИИ ПРИ ЗАГРУЗКЕ
+# ============================================
+with app.app_context():
+    init_db()
 
 # ============================================
 # МАРШРУТЫ
@@ -287,32 +247,12 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     try:
-        admin_exists = Courier.query.filter_by(is_admin=True).first()
-        
         if request.method == 'POST':
             last_name = request.form.get('last_name', '').strip()
             password = request.form.get('password', '').strip()
             
             if not last_name or not password:
                 return render_template('login.html', error='Заполните все поля')
-            
-            if not admin_exists:
-                # Создаем админа из .env данных
-                hashed_password = generate_password_hash(ADMIN_PASSWORD)
-                admin = Courier(
-                    first_name='Admin',
-                    last_name=ADMIN_LOGIN,
-                    city='System',
-                    password=hashed_password,
-                    is_admin=True
-                )
-                db.session.add(admin)
-                db.session.commit()
-                
-                session['user_id'] = admin.id
-                session['last_name'] = admin.last_name
-                session['is_admin'] = True
-                return redirect(url_for('admin_dashboard'))
             
             user = Courier.query.filter_by(last_name=last_name).first()
             if user and check_password_hash(user.password, password):
@@ -447,7 +387,7 @@ def upload_photo():
             return jsonify({'error': 'Empty filename'}), 400
         
         if not allowed_file(file.filename):
-            return jsonify({'error': 'File type not allowed. Use: png, jpg, jpeg, gif, webp'}), 400
+            return jsonify({'error': 'File type not allowed'}), 400
         
         if not folder_id:
             return jsonify({'error': 'Folder ID required'}), 400
@@ -468,12 +408,10 @@ def upload_photo():
         if not courier or not folder:
             return jsonify({'error': 'Courier or folder not found'}), 404
         
-        # Очищаем названия от спецсимволов
         city_clean = clean_filename(courier.city) if courier.city else 'no_city'
         last_name_clean = clean_filename(courier.last_name)
         folder_name_clean = clean_filename(folder.name)
         
-        # Создаем путь: город/фамилия/папка/
         upload_path = os.path.join(
             app.config['UPLOAD_FOLDER'],
             city_clean,
@@ -481,22 +419,16 @@ def upload_photo():
             folder_name_clean
         )
         
-        # Создаем все необходимые папки
         if not safe_create_directory(upload_path):
             return jsonify({'error': 'Failed to create directory'}), 500
         
-        # Формируем имя файла: фамилия_город_время.расширение
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
         filename = f"{last_name_clean}_{city_clean}_{timestamp}.{file_ext}"
         
-        # Полный путь к файлу
         file_path = os.path.join(upload_path, filename)
-        
-        # Сохраняем файл (БЕЗ КОМПРЕССИИ)
         file.save(file_path)
         
-        # Сохраняем путь в БД (относительный)
         db_path = os.path.join(
             'uploads',
             city_clean,
@@ -518,7 +450,7 @@ def upload_photo():
         
         return jsonify({
             'success': True,
-            'message': f'Фото загружено в {city_clean}/{last_name_clean}/{folder_name_clean}/',
+            'message': f'Фото загружено',
             'photo_id': new_photo.id,
             'filename': filename,
             'path': db_path
@@ -547,7 +479,6 @@ def admin_dashboard():
         
         if search_query:
             query = query.filter(Courier.last_name.ilike(f'%{search_query}%'))
-            logger.info(f"Поиск: '{search_query}' -> найдено: {query.count()}")
         
         if city_filter != 'all':
             query = query.filter_by(city=city_filter)
@@ -576,7 +507,6 @@ def admin_dashboard():
             
             if found_courier:
                 all_photos = Photo.query.filter_by(courier_id=found_courier.id).all()
-                logger.info(f"Найдено фото для курьера {found_courier.last_name}: {len(all_photos)}")
             else:
                 all_photos = []
         else:
@@ -649,7 +579,7 @@ def create_folder():
             return jsonify({'error': 'Введите название папки'}), 400
         
         if not courier_ids or len(courier_ids) == 0:
-            return jsonify({'error': 'Выберите хотя бы одного курьера для назначения папки'}), 400
+            return jsonify({'error': 'Выберите хотя бы одного курьера'}), 400
         
         existing = Folder.query.filter_by(name=folder_name).first()
         if existing:
@@ -794,7 +724,6 @@ def delete_folder(folder_id):
                 )
                 if os.path.exists(folder_path):
                     shutil.rmtree(folder_path)
-                    logger.info(f"Удалена папка: {folder_path}")
         
         CourierFolder.query.filter_by(folder_id=folder_id).delete()
         Photo.query.filter_by(folder_id=folder_id).delete()
@@ -846,7 +775,7 @@ def delete_photo(photo_id):
         return jsonify({'error': str(e)}), 500
 
 # ============================================
-# ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ ОШИБОК
+# ОБРАБОТЧИКИ ОШИБОК
 # ============================================
 @app.errorhandler(404)
 def not_found_error(error):
@@ -868,32 +797,13 @@ def handle_exception(e):
     return jsonify({'error': 'Внутренняя ошибка сервера'}), 500
 
 # ============================================
-# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ПРИ ЗАПУСКЕ
-# ============================================
-def init_db():
-    """Инициализация базы данных при запуске"""
-    try:
-        # ============================================
-        # ИНИЦИАЛИЗАЦИЯ ДЛЯ GUNICORN (ПРОД)
-        # ============================================
-        with app.app_context():
-            init_db()
-            db.create_all()
-            create_admin_if_not_exists()
-            logger.info("[OK] База данных инициализирована в проде")
-
-# ============================================
-# ЛОКАЛЬНЫЙ ЗАПУСК
+# ЗАПУСК
 # ============================================
 if __name__ == '__main__':
     try:
         with app.app_context():
             init_db()
-            db.create_all()
-            create_admin_if_not_exists()
         app.run(debug=DEBUG, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
-
-
