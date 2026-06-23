@@ -47,7 +47,7 @@ app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-# Данные администратора из .env (НЕ В КОДЕ!)
+# Данные администратора из .env
 ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
@@ -117,7 +117,7 @@ class Photo(db.Model):
     courier_id = db.Column(db.Integer, db.ForeignKey('courier.id'), nullable=False)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    compressed = db.Column(db.Boolean, default=False)
+    compressed = db.Column(db.Boolean, default=True)
 
 # ============================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -408,41 +408,44 @@ def upload_photo():
         if not courier or not folder:
             return jsonify({'error': 'Courier or folder not found'}), 404
         
+        # ============================================
+        # СТРУКТУРА ПАПОК В YANDEX CLOUD:
+        # город/фамилия_куръера/папка_админа/фото
+        # ============================================
         city_clean = clean_filename(courier.city) if courier.city else 'no_city'
         last_name_clean = clean_filename(courier.last_name)
         folder_name_clean = clean_filename(folder.name)
-        
-        upload_path = os.path.join(
-            app.config['UPLOAD_FOLDER'],
-            city_clean,
-            last_name_clean,
-            folder_name_clean
-        )
-        
-        if not safe_create_directory(upload_path):
-            return jsonify({'error': 'Failed to create directory'}), 500
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
         filename = f"{last_name_clean}_{city_clean}_{timestamp}.{file_ext}"
         
-        file_path = os.path.join(upload_path, filename)
-        file.save(file_path)
+        # Путь в Yandex Cloud: город/фамилия/папка/фото.jpg
+        object_name = f"{city_clean}/{last_name_clean}/{folder_name_clean}/{filename}"
         
-        db_path = os.path.join(
-            'uploads',
-            city_clean,
-            last_name_clean,
-            folder_name_clean,
-            filename
-        ).replace('\\', '/')
+        # Сохраняем временно на сервер
+        temp_path = os.path.join('/tmp', filename)
+        file.save(temp_path)
         
+        # Загружаем в Yandex Cloud
+        from cloud import YandexCloudStorage
+        cloud = YandexCloudStorage()
+        result = cloud.upload_file(temp_path, object_name)
+        
+        # Удаляем временный файл
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        if not result['success']:
+            return jsonify({'error': 'Failed to upload to cloud: ' + result.get('error', '')}), 500
+        
+        # Сохраняем URL в БД
         new_photo = Photo(
             filename=filename,
-            filepath=db_path,
+            filepath=result['url'],  # URL из Yandex Cloud
             courier_id=courier_id,
             folder_id=folder_id,
-            compressed=False
+            compressed=True
         )
         
         db.session.add(new_photo)
@@ -450,16 +453,13 @@ def upload_photo():
         
         return jsonify({
             'success': True,
-            'message': f'Фото загружено',
+            'message': 'Фото загружено в Yandex Cloud',
             'photo_id': new_photo.id,
             'filename': filename,
-            'path': db_path
+            'url': result['url'],
+            'path': object_name
         })
     
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        logger.error(f"Database error in upload_photo: {e}")
-        return jsonify({'error': 'Database error'}), 500
     except Exception as e:
         logger.error(f"Error in upload_photo: {e}")
         logger.error(traceback.format_exc())
@@ -756,19 +756,26 @@ def delete_photo(photo_id):
         if not photo:
             return jsonify({'error': 'Photo not found'}), 404
         
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], 
-                                photo.filepath.replace('uploads/', ''))
-        safe_delete_file(file_path)
+        # Удаляем из Yandex Cloud
+        try:
+            from cloud import YandexCloudStorage
+            cloud = YandexCloudStorage()
+            
+            # Из URL получаем путь к объекту
+            url_parts = photo.filepath.split('/')
+            if len(url_parts) > 3:
+                object_name = '/'.join(url_parts[3:])
+                cloud.delete_file(object_name)
+                logger.info(f"[OK] Файл удален из Yandex Cloud: {object_name}")
+        except Exception as e:
+            logger.error(f"Error deleting from cloud: {e}")
         
+        # Удаляем запись из БД
         db.session.delete(photo)
         db.session.commit()
         
         return jsonify({'success': True, 'message': 'Photo deleted'})
     
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        logger.error(f"Database error in delete_photo: {e}")
-        return jsonify({'error': 'Ошибка базы данных'}), 500
     except Exception as e:
         logger.error(f"Error in delete_photo: {e}")
         logger.error(traceback.format_exc())
