@@ -3,16 +3,15 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
-import sys
 import secrets
 import json
 import shutil
 import logging
 import traceback
+import sys
 import signal
 import time
 from datetime import datetime
-from PIL import Image
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from dotenv import load_dotenv
 
@@ -20,17 +19,6 @@ from dotenv import load_dotenv
 # ЗАГРУЗКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
 # ============================================
 load_dotenv()
-
-# Обязательные переменные
-SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
-
-# Опциональные
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///couriers.db')
-UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'static/uploads')
-MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
-DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # ============================================
 # НАСТРОЙКА КОДИРОВКИ ДЛЯ WINDOWS
@@ -164,7 +152,7 @@ class Photo(db.Model):
     courier_id = db.Column(db.Integer, db.ForeignKey('courier.id'), nullable=False)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    compressed = db.Column(db.Boolean, default=True)
+    compressed = db.Column(db.Boolean, default=False)
 
 # ============================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -174,18 +162,6 @@ def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
     except Exception as e:
         logger.error(f"Error in allowed_file: {e}")
-        return False
-
-def compress_image(image_path, output_path, quality=70, max_size=(800, 800)):
-    try:
-        with Image.open(image_path) as img:
-            if img.mode in ('RGBA', 'LA', 'P'):
-                img = img.convert('RGB')
-            img.thumbnail(max_size, Image.Resampling.LANCZOS)
-            img.save(output_path, 'JPEG', quality=quality, optimize=True)
-            return True
-    except Exception as e:
-        logger.error(f"Error compressing image: {e}")
         return False
 
 def serialize_folder(folder):
@@ -468,10 +444,12 @@ def upload_photo():
         if not courier or not folder:
             return jsonify({'error': 'Courier or folder not found'}), 404
         
+        # Очищаем названия от спецсимволов
         city_clean = clean_filename(courier.city) if courier.city else 'no_city'
         last_name_clean = clean_filename(courier.last_name)
         folder_name_clean = clean_filename(folder.name)
         
+        # Создаем путь: город/фамилия/папка/
         upload_path = os.path.join(
             app.config['UPLOAD_FOLDER'],
             city_clean,
@@ -479,50 +457,48 @@ def upload_photo():
             folder_name_clean
         )
         
+        # Создаем все необходимые папки
         if not safe_create_directory(upload_path):
             return jsonify({'error': 'Failed to create directory'}), 500
         
+        # Формируем имя файла: фамилия_город_время.расширение
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
-        filename = f"{timestamp}.{file_ext}"
+        filename = f"{last_name_clean}_{city_clean}_{timestamp}.{file_ext}"
         
+        # Полный путь к файлу
         file_path = os.path.join(upload_path, filename)
+        
+        # Сохраняем файл (БЕЗ КОМПРЕССИИ)
         file.save(file_path)
         
-        compressed_filename = f"compressed_{timestamp}.{file_ext}"
-        compressed_path = os.path.join(upload_path, compressed_filename)
+        # Сохраняем путь в БД (относительный)
+        db_path = os.path.join(
+            'uploads',
+            city_clean,
+            last_name_clean,
+            folder_name_clean,
+            filename
+        ).replace('\\', '/')
         
-        if compress_image(file_path, compressed_path):
-            safe_delete_file(file_path)
-            
-            db_path = os.path.join(
-                'uploads',
-                city_clean,
-                last_name_clean,
-                folder_name_clean,
-                compressed_filename
-            ).replace('\\', '/')
-            
-            new_photo = Photo(
-                filename=filename,
-                filepath=db_path,
-                courier_id=courier_id,
-                folder_id=folder_id
-            )
-            
-            db.session.add(new_photo)
-            db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': f'Фото загружено в {city_clean}/{last_name_clean}/{folder_name_clean}/',
-                'photo_id': new_photo.id,
-                'filename': filename,
-                'path': db_path
-            })
-        else:
-            safe_delete_file(file_path)
-            return jsonify({'error': 'Failed to compress image'}), 500
+        new_photo = Photo(
+            filename=filename,
+            filepath=db_path,
+            courier_id=courier_id,
+            folder_id=folder_id,
+            compressed=False
+        )
+        
+        db.session.add(new_photo)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Фото загружено в {city_clean}/{last_name_clean}/{folder_name_clean}/',
+            'photo_id': new_photo.id,
+            'filename': filename,
+            'path': db_path
+        })
     
     except SQLAlchemyError as e:
         db.session.rollback()
