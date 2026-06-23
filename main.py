@@ -21,6 +21,17 @@ from dotenv import load_dotenv
 # ============================================
 load_dotenv()
 
+# Обязательные переменные
+SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+ADMIN_LOGIN = os.environ.get('ADMIN_LOGIN', 'admin')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+
+# Опциональные
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///couriers.db')
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'static/uploads')
+MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+
 # ============================================
 # НАСТРОЙКА КОДИРОВКИ ДЛЯ WINDOWS
 # ============================================
