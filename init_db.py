@@ -4,7 +4,6 @@ from werkzeug.security import generate_password_hash
 import os
 
 with app.app_context():
-    init_db()
     print("🔧 Создание таблиц...")
     db.create_all()
     print("✅ Таблицы созданы")
