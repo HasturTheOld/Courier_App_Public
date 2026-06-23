@@ -879,18 +879,18 @@ def init_db():
         return False
 
 # ============================================
-# ЗАПУСК
-# ============================================
-if __name__ == '__main__':
 # ИНИЦИАЛИЗАЦИЯ ДЛЯ GUNICORN (ПРОД)
+# выполняется при импорте main:app
 with app.app_context():
     init_db()
     db.create_all()
     create_admin_if_not_exists()
     logger.info("[OK] База данных инициализирована в проде")
 
+# ============================================
+# ЛОКАЛЬНЫЙ ЗАПУСК
+# ============================================
 if __name__ == '__main__':
-    # ЛОКАЛЬНЫЙ ЗАПУСК
     try:
         with app.app_context():
             init_db()
@@ -900,4 +900,3 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
-
