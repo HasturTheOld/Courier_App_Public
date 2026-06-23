@@ -40,6 +40,28 @@
             border-color: #3b82f6;
             background-color: #eff6ff;
         }
+        .upload-zone.dragover .drop-text {
+            color: #3b82f6;
+        }
+        .photo-item {
+            transition: transform 0.2s;
+        }
+        .photo-item:hover {
+            transform: scale(1.02);
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        .file-list {
+            max-height: 100px;
+            overflow-y: auto;
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        .file-list .file-item {
+            padding: 0.125rem 0.25rem;
+            border-bottom: 1px solid #f3f4f6;
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -48,11 +70,14 @@
             <div class="flex justify-between items-center h-16">
                 <div class="flex items-center">
                     <i class="fas fa-truck text-blue-500 text-xl mr-2"></i>
-                    <span class="text-xl font-semibold text-gray-800">CKC</span>
+                    <span class="text-xl font-semibold text-gray-800">Courier App</span>
                 </div>
                 <div class="flex items-center space-x-4">
+                    <span class="text-gray-600 text-sm hidden sm:inline">
+                        <i class="fas fa-user mr-1"></i>{{ courier.first_name }} {{ courier.last_name }}
+                    </span>
                     <a href="/logout" class="text-red-500 hover:text-red-700 text-sm font-medium">
-                        <i class="fas fa-sign-out-alt"></i> Выйти
+                        <i class="fas fa-sign-out-alt"></i> <span class="hidden sm:inline">Выйти</span>
                     </a>
                 </div>
             </div>
@@ -60,7 +85,7 @@
     </nav>
 
     <main class="max-w-4xl mx-auto px-4 py-6">
-        {% if courier %}
+        <!-- Информация о курьере -->
         <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
             <div class="text-center">
                 <div class="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -73,8 +98,8 @@
                 </p>
             </div>
         </div>
-        {% endif %}
 
+        <!-- Папки с фотографиями -->
         {% if folders %}
             {% for folder_data in folders %}
             <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
@@ -88,27 +113,49 @@
                     </span>
                 </div>
                 
-                <div class="upload-zone">
+                <!-- ФОРМА ЗАГРУЗКИ НЕСКОЛЬКИХ ФОТО -->
+                <div class="upload-zone rounded-lg p-4 mb-4">
                     <form class="upload-form" data-folder-id="{{ folder_data.folder.id }}" enctype="multipart/form-data">
-                        <div class="flex flex-col sm:flex-row items-center gap-3">
-                            <input type="file" name="photos[]" accept="image/*" multiple> 
-                                   class="flex-1 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <div class="flex-1 w-full">
+                                <input type="file" name="photos[]" accept="image/*" multiple 
+                                       class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                                <p class="text-xs text-gray-400 mt-1">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Выберите несколько файлов (Ctrl+Click) или перетащите
+                                </p>
+                            </div>
                             <button type="submit" 
-                                    class="w-full sm:w-auto bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition font-medium">
-                                <i class="fas fa-upload mr-2"></i>Загрузить фото
+                                    class="w-full sm:w-auto bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition font-medium whitespace-nowrap">
+                                <i class="fas fa-upload mr-2"></i>Загрузить
                             </button>
                         </div>
+                        
+                        <!-- Список выбранных файлов -->
+                        <div class="file-list mt-2 hidden" id="fileList"></div>
+                        
+                        <!-- Прогресс загрузки -->
                         <div class="upload-progress mt-3 hidden">
                             <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%;"></div>
+                                <div class="progress-bar bg-blue-500 h-2.5 rounded-full" style="width: 0%;"></div>
                             </div>
-                            <p class="text-sm text-gray-500 mt-1 text-center">Загрузка...</p>
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span id="progressText">0%</span>
+                                <span id="progressCount">0 / 0</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Статус загрузки -->
+                        <div id="uploadStatus" class="mt-2 hidden">
+                            <div class="text-sm text-green-600" id="successCount"></div>
+                            <div class="text-sm text-red-600" id="errorCount"></div>
                         </div>
                     </form>
                 </div>
                 
+                <!-- Галерея -->
                 {% if folder_data.photos %}
-                <div class="photo-grid mt-4">
+                <div class="photo-grid">
                     {% for photo in folder_data.photos %}
                     <div class="photo-item bg-gray-100 rounded-lg overflow-hidden relative group">
                         <img src="{{ url_for('static', filename=photo.filepath) }}" 
@@ -121,7 +168,7 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="text-center text-gray-500 py-8 mt-4">
+                <div class="text-center text-gray-500 py-8">
                     <i class="fas fa-camera text-5xl mb-3"></i>
                     <p>Нет загруженных фотографий</p>
                     <p class="text-sm">Загрузите фото через форму выше</p>
@@ -141,7 +188,41 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         $(document).ready(function() {
-            // Drag and drop
+            // ============================================
+            // 1. ПОКАЗ СПИСКА ВЫБРАННЫХ ФАЙЛОВ
+            // ============================================
+            $('input[type="file"]').on('change', function() {
+                var fileList = $(this).closest('.upload-zone').find('.file-list');
+                var files = this.files;
+                
+                if (files.length === 0) {
+                    fileList.addClass('hidden').empty();
+                    return;
+                }
+                
+                fileList.removeClass('hidden');
+                fileList.empty();
+                
+                for (var i = 0; i < files.length; i++) {
+                    var file = files[i];
+                    var size = (file.size / 1024).toFixed(1);
+                    if (size > 1024) {
+                        size = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+                    } else {
+                        size = size + ' KB';
+                    }
+                    fileList.append(
+                        '<div class="file-item flex justify-between">' +
+                            '<span><i class="fas fa-file-image mr-1 text-blue-500"></i>' + file.name + '</span>' +
+                            '<span class="text-xs text-gray-400">' + size + '</span>' +
+                        '</div>'
+                    );
+                }
+            });
+
+            // ============================================
+            // 2. DRAG AND DROP ДЛЯ НЕСКОЛЬКИХ ФАЙЛОВ
+            // ============================================
             $('.upload-zone').on('dragover', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -160,90 +241,131 @@
                 $(this).removeClass('dragover');
                 var files = e.originalEvent.dataTransfer.files;
                 if (files.length > 0) {
-                    $(this).find('input[type="file"]')[0].files = files;
+                    var input = $(this).find('input[type="file"]');
+                    input[0].files = files;
+                    input.trigger('change');
+                    // Автоматически отправляем форму
                     $(this).closest('form').submit();
                 }
             });
 
-            // Загрузка фото
+            // ============================================
+            // 3. ЗАГРУЗКА НЕСКОЛЬКИХ ФОТО
+            // ============================================
             $('.upload-form').on('submit', function(e) {
                 e.preventDefault();
                 
                 var form = $(this);
                 var folderId = form.data('folder-id');
                 var fileInput = form.find('input[type="file"]');
-                var file = fileInput[0].files[0];
+                var files = fileInput[0].files;
                 
-                if (!file) {
-                    alert('Выберите файл для загрузки');
+                if (files.length === 0) {
+                    alert('Выберите файлы для загрузки');
                     return;
                 }
                 
-                // Проверка типа файла
-                var allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
-                if (!allowedTypes.includes(file.type)) {
-                    alert('Разрешены только изображения: PNG, JPG, JPEG, GIF, WEBP');
-                    return;
-                }
-                
-                // Проверка размера файла (макс 16MB)
-                if (file.size > 16 * 1024 * 1024) {
-                    alert('Файл слишком большой. Максимальный размер 16MB');
-                    return;
-                }
-                
-                var formData = new FormData();
-                formData.append('photo', file);
-                formData.append('folder_id', folderId);
-                
-                var progressDiv = form.find('.upload-progress');
-                var progressBar = progressDiv.find('div div');
-                progressDiv.removeClass('hidden');
-                progressBar.css('width', '0%');
-                
-                $.ajax({
-                    url: '/courier/upload',
-                    type: 'POST',
-                    data: formData,
-                    contentType: false,
-                    processData: false,
-                    xhr: function() {
-                        var xhr = new XMLHttpRequest();
-                        xhr.upload.addEventListener('progress', function(e) {
-                            if (e.lengthComputable) {
-                                var percent = (e.loaded / e.total) * 100;
-                                progressBar.css('width', percent + '%');
-                            }
-                        });
-                        return xhr;
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            alert('✅ Фото успешно загружено!');
-                            location.reload();
-                        } else {
-                            alert('❌ Ошибка: ' + response.error);
-                            progressDiv.addClass('hidden');
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        var errorMsg = 'Ошибка загрузки';
-                        if (xhr.responseJSON && xhr.responseJSON.error) {
-                            errorMsg = xhr.responseJSON.error;
-                        } else if (xhr.status === 400) {
-                            errorMsg = 'Ошибка 400: Неверный запрос. Проверьте файл.';
-                        } else if (xhr.status === 403) {
-                            errorMsg = 'Ошибка 403: Доступ запрещен.';
-                        } else if (xhr.status === 500) {
-                            errorMsg = 'Ошибка 500: Проблема на сервере.';
-                        }
-                        alert('❌ ' + errorMsg);
-                        progressDiv.addClass('hidden');
-                        console.log('Status:', xhr.status);
-                        console.log('Error:', error);
-                        console.log('Response:', xhr.responseText);
+                // Проверка размера файлов (макс 16MB каждый)
+                for (var i = 0; i < files.length; i++) {
+                    if (files[i].size > 16 * 1024 * 1024) {
+                        alert('Файл "' + files[i].name + '" слишком большой (макс 16MB)');
+                        return;
                     }
-                });
+                }
+                
+                // Показываем прогресс
+                var progressDiv = form.find('.upload-progress');
+                var progressBar = progressDiv.find('.progress-bar');
+                var progressText = document.getElementById('progressText');
+                var progressCount = document.getElementById('progressCount');
+                var statusDiv = document.getElementById('uploadStatus');
+                var successCount = document.getElementById('successCount');
+                var errorCount = document.getElementById('errorCount');
+                
+                progressDiv.removeClass('hidden');
+                statusDiv.classList.remove('hidden');
+                successCount.textContent = '';
+                errorCount.textContent = '';
+                
+                var uploaded = 0;
+                var errors = 0;
+                var total = files.length;
+                
+                progressCount.textContent = '0 / ' + total;
+                
+                // Загружаем каждый файл по очереди
+                function uploadNext(index) {
+                    if (index >= total) {
+                        // Все загружены
+                        progressBar.css('width', '100%');
+                        progressText.textContent = '100%';
+                        progressCount.textContent = total + ' / ' + total;
+                        
+                        if (errors === 0) {
+                            successCount.textContent = '✅ Все ' + total + ' фото загружены!';
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        } else {
+                            successCount.textContent = '✅ Загружено: ' + uploaded + ' фото';
+                            errorCount.textContent = '❌ Ошибок: ' + errors;
+                            setTimeout(function() {
+                                location.reload();
+                            }, 3000);
+                        }
+                        return;
+                    }
+                    
+                    var file = files[index];
+                    var formData = new FormData();
+                    formData.append('photo', file);
+                    formData.append('folder_id', folderId);
+                    
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/courier/upload', true);
+                    
+                    xhr.upload.addEventListener('progress', function(e) {
+                        if (e.lengthComputable) {
+                            var overallProgress = ((index + (e.loaded / e.total)) / total) * 100;
+                            var percent = Math.round(overallProgress);
+                            progressBar.css('width', percent + '%');
+                            progressText.textContent = percent + '%';
+                            progressCount.textContent = index + ' / ' + total + ' (' + Math.round((index / total) * 100) + '%)';
+                        }
+                    });
+                    
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            try {
+                                var response = JSON.parse(xhr.responseText);
+                                if (response.success) {
+                                    uploaded++;
+                                    successCount.textContent = '✅ Загружено: ' + uploaded + '/' + total;
+                                } else {
+                                    errors++;
+                                    errorCount.textContent = '❌ Ошибок: ' + errors + ' (файл: ' + file.name + ')';
+                                }
+                            } catch(e) {
+                                errors++;
+                                errorCount.textContent = '❌ Ошибок: ' + errors + ' (файл: ' + file.name + ')';
+                            }
+                        } else {
+                            errors++;
+                            errorCount.textContent = '❌ Ошибок: ' + errors + ' (файл: ' + file.name + ')';
+                        }
+                        uploadNext(index + 1);
+                    };
+                    
+                    xhr.onerror = function() {
+                        errors++;
+                        errorCount.textContent = '❌ Ошибок: ' + errors + ' (файл: ' + file.name + ')';
+                        uploadNext(index + 1);
+                    };
+                    
+                    xhr.send(formData);
+                }
+                
+                uploadNext(0);
             });
         });
     </script>
