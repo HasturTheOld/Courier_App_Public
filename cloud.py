@@ -1,13 +1,15 @@
 import boto3
 import os
+import json
+import logging
 from dotenv import load_dotenv
 
-load_dotenv()
-
-# Отключаем отладочные логи boto3
+# Отключаем отладочные логи
 logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
+
+load_dotenv()
 
 class YandexCloudStorage:
     def __init__(self):
@@ -19,18 +21,88 @@ class YandexCloudStorage:
             aws_access_key_id=os.environ.get('YANDEX_ACCESS_KEY'),
             aws_secret_access_key=os.environ.get('YANDEX_SECRET_KEY'),
         )
-    
+
     def upload_file(self, file_path, object_name):
+        """Загрузить файл в Yandex Cloud"""
         try:
             self.client.upload_file(file_path, self.bucket_name, object_name)
             url = f"https://storage.yandexcloud.net/{self.bucket_name}/{object_name}"
-            return {'success': True, 'url': url}
+            return {'success': True, 'url': url, 'object_name': object_name}
         except Exception as e:
             return {'success': False, 'error': str(e)}
-    
-    def delete_file(self, object_name):
+
+    def upload_metadata(self, object_name, metadata):
+        """Загрузить метаданные как JSON файл рядом с фото"""
         try:
+            # Формируем имя JSON файла
+            json_key = object_name.rsplit('.', 1)[0] + '.json'
+            
+            # Преобразуем метаданные в JSON
+            json_data = json.dumps(metadata, ensure_ascii=False, indent=2)
+            
+            # Загружаем JSON файл
+            self.client.put_object(
+                Bucket=self.bucket_name,
+                Key=json_key,
+                Body=json_data.encode('utf-8'),
+                ContentType='application/json'
+            )
+            
+            json_url = f"https://storage.yandexcloud.net/{self.bucket_name}/{json_key}"
+            return {'success': True, 'url': json_url, 'key': json_key}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def get_metadata(self, object_name):
+        """Получить метаданные из JSON файла рядом с фото"""
+        try:
+            json_key = object_name.rsplit('.', 1)[0] + '.json'
+            
+            response = self.client.get_object(
+                Bucket=self.bucket_name,
+                Key=json_key
+            )
+            
+            json_data = response['Body'].read().decode('utf-8')
+            metadata = json.loads(json_data)
+            return {'success': True, 'metadata': metadata}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def delete_file(self, object_name):
+        """Удалить файл и его метаданные из Yandex Cloud"""
+        try:
+            # Удаляем фото
             self.client.delete_object(Bucket=self.bucket_name, Key=object_name)
+            
+            # Удаляем JSON с метаданными
+            json_key = object_name.rsplit('.', 1)[0] + '.json'
+            try:
+                self.client.delete_object(Bucket=self.bucket_name, Key=json_key)
+            except:
+                pass  # Если JSON нет, просто игнорируем
+            
             return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def list_files(self, prefix=''):
+        """Получить список всех файлов в бакете"""
+        try:
+            response = self.client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=prefix
+            )
+            files = []
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    if not obj['Key'].endswith('.json'):  # Игнорируем JSON файлы
+                        files.append({
+                            'key': obj['Key'],
+                            'size': obj['Size'],
+                            'last_modified': obj['LastModified'],
+                            'etag': obj['ETag'].strip('"')
+                        })
+            return {'success': True, 'files': files}
         except Exception as e:
             return {'success': False, 'error': str(e)}
