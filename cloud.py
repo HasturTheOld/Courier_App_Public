@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Отключаем отладочные логи boto3
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('botocore').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+
 class YandexCloudStorage:
     def __init__(self):
         self.bucket_name = os.environ.get('YANDEX_BUCKET', 'images-from-courier')
