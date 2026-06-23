@@ -220,11 +220,19 @@ def get_safe_courier(courier_id):
         return None
 
 # ============================================
-# СОЗДАНИЕ АДМИНИСТРАТОРА (из .env)
+# СОЗДАНИЕ АДМИНИСТРАТОРА И ТАБЛИЦ (ИСПРАВЛЕНО)
 # ============================================
 def create_admin_if_not_exists():
     """Создает администратора из .env если его нет"""
     try:
+        # Проверяем, существует ли таблица courier
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if not inspector.has_table('courier'):
+            logger.info("[WARN] Таблица courier не найдена, создаем все таблицы...")
+            db.create_all()
+            logger.info("[OK] Все таблицы созданы")
+        
         admin = Courier.query.filter_by(is_admin=True).first()
         if not admin:
             hashed_password = generate_password_hash(ADMIN_PASSWORD)
@@ -844,23 +852,51 @@ def handle_exception(e):
     return jsonify({'error': 'Внутренняя ошибка сервера'}), 500
 
 # ============================================
+# ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ПРИ ЗАПУСКЕ
+# ============================================
+def init_db():
+    """Инициализация базы данных при запуске"""
+    try:
+        with app.app_context():
+            # Проверяем и создаем таблицы
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            if not inspector.has_table('courier'):
+                logger.info("[WARN] Таблицы не найдены, создаем...")
+                db.create_all()
+                logger.info("[OK] Все таблицы созданы")
+            else:
+                logger.info("[OK] Таблицы уже существуют")
+            
+            # Создаем администратора
+            create_admin_if_not_exists()
+            
+            logger.info("[OK] База данных инициализирована")
+            return True
+    except Exception as e:
+        logger.error(f"[ERROR] Ошибка инициализации базы данных: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
+# ============================================
 # ЗАПУСК
 # ============================================
 if __name__ == '__main__':
     try:
-        with app.app_context():
-            db.create_all()
-            create_admin_if_not_exists()
-            logger.info("[OK] База данных создана")
+        # Инициализация базы данных
+        if init_db():
             logger.info("[START] Сервер запускается...")
             logger.info("[URL] Откройте: http://localhost:5000")
             print("\n" + "=" * 50)
-            print("[OK] База данных создана")
+            print("[OK] База данных инициализирована")
             print("[START] Сервер запускается...")
             print("[URL] Откройте: http://localhost:5000")
             print("=" * 50 + "\n")
-        
-        app.run(debug=DEBUG, host='0.0.0.0', port=5000)
+            
+            app.run(debug=DEBUG, host='0.0.0.0', port=5000)
+        else:
+            logger.error("[ERROR] Не удалось инициализировать базу данных")
+            print("[ERROR] Не удалось инициализировать базу данных")
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
