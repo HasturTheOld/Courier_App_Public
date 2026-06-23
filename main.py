@@ -878,20 +878,14 @@ def init_db():
         logger.error(traceback.format_exc())
         return False
 
-with app.app_context():
-    init_db()
-    db.create_all()
-    create_admin_if_not_exists()
-    logger.info("[OK] База данных инициализирована в проде")
-
+# ============================================
+# ЗАПУСК
+# ============================================
 if __name__ == '__main__':
     try:
         with app.app_context():
             init_db()
-            db.create_all()
-            create_admin_if_not_exists()
         app.run(debug=DEBUG, host='0.0.0.0', port=5000)
     except Exception as e:
         logger.error(f"[ERROR] Ошибка запуска: {e}")
         logger.error(traceback.format_exc())
-
