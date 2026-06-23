@@ -12,6 +12,8 @@ import sys
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from dotenv import load_dotenv
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
 
 # ============================================
 # ЗАГРУЗКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
@@ -39,7 +41,14 @@ app = Flask(__name__)
 # НАСТРОЙКИ ИЗ .env
 # ============================================
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///couriers.db')
+
+# Поддержка PostgreSQL и SQLite
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL and DATABASE_URL.startswith('postgresql://'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///couriers.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'static/uploads')
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))
@@ -171,6 +180,39 @@ def safe_create_directory(path):
     except Exception as e:
         logger.error(f"Error creating directory {path}: {e}")
         return False
+
+def extract_photo_metadata(file_path):
+    """Извлечь EXIF-данные из фото"""
+    try:
+        img = Image.open(file_path)
+        exif_data = img.getexif()
+        
+        metadata = {
+            'width': img.width,
+            'height': img.height,
+            'format': img.format,
+            'mode': img.mode,
+            'file_size': os.path.getsize(file_path)
+        }
+        
+        if exif_data:
+            for tag_id, value in exif_data.items():
+                tag_name = TAGS.get(tag_id, tag_id)
+                if tag_name == 'GPSInfo':
+                    gps_info = {}
+                    for gps_tag in value:
+                        gps_tag_name = GPSTAGS.get(gps_tag, gps_tag)
+                        gps_info[gps_tag_name] = value[gps_tag]
+                    metadata['gps'] = gps_info
+                elif tag_name in ['DateTime', 'DateTimeOriginal', 'DateTimeDigitized']:
+                    metadata[tag_name] = str(value)
+                else:
+                    metadata[tag_name] = str(value)
+        
+        return metadata
+    except Exception as e:
+        logger.error(f"Error extracting EXIF: {e}")
+        return {'error': str(e)}
 
 # ============================================
 # ФУНКЦИЯ СОЗДАНИЯ АДМИНИСТРАТОРА
@@ -427,22 +469,52 @@ def upload_photo():
         temp_path = os.path.join('/tmp', filename)
         file.save(temp_path)
         
-        # Загружаем в Yandex Cloud
+        # ============================================
+        # ЗАГРУЖАЕМ ФОТО В YANDEX CLOUD
+        # ============================================
         from cloud import YandexCloudStorage
         cloud = YandexCloudStorage()
         result = cloud.upload_file(temp_path, object_name)
+        
+        if not result['success']:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return jsonify({'error': 'Failed to upload to cloud: ' + result.get('error', '')}), 500
+        
+        # ============================================
+        # ИЗВЛЕКАЕМ МЕТАДАННЫЕ ИЗ ФОТО
+        # ============================================
+        metadata = extract_photo_metadata(temp_path)
+        
+        # Добавляем дополнительную информацию
+        metadata['uploaded_at'] = datetime.now().isoformat()
+        metadata['courier'] = {
+            'id': courier.id,
+            'first_name': courier.first_name,
+            'last_name': courier.last_name,
+            'city': courier.city
+        }
+        metadata['folder'] = {
+            'id': folder.id,
+            'name': folder.name,
+            'city': folder.city
+        }
+        metadata['yandex_url'] = result['url']
+        metadata['yandex_path'] = object_name
+        
+        # ============================================
+        # ЗАГРУЖАЕМ МЕТАДАННЫЕ В YANDEX CLOUD (JSON)
+        # ============================================
+        metadata_result = cloud.upload_metadata(object_name, metadata)
         
         # Удаляем временный файл
         if os.path.exists(temp_path):
             os.remove(temp_path)
         
-        if not result['success']:
-            return jsonify({'error': 'Failed to upload to cloud: ' + result.get('error', '')}), 500
-        
-        # Сохраняем URL в БД
+        # Сохраняем только URL фото в БД
         new_photo = Photo(
             filename=filename,
-            filepath=result['url'],  # URL из Yandex Cloud
+            filepath=result['url'],
             courier_id=courier_id,
             folder_id=folder_id,
             compressed=True
@@ -453,11 +525,13 @@ def upload_photo():
         
         return jsonify({
             'success': True,
-            'message': 'Фото загружено в Yandex Cloud',
+            'message': 'Фото и метаданные загружены в Yandex Cloud',
             'photo_id': new_photo.id,
             'filename': filename,
             'url': result['url'],
-            'path': object_name
+            'path': object_name,
+            'metadata': metadata,
+            'metadata_saved': metadata_result.get('success', False)
         })
     
     except Exception as e:
@@ -756,7 +830,7 @@ def delete_photo(photo_id):
         if not photo:
             return jsonify({'error': 'Photo not found'}), 404
         
-        # Удаляем из Yandex Cloud
+        # Удаляем из Yandex Cloud (фото + JSON с метаданными)
         try:
             from cloud import YandexCloudStorage
             cloud = YandexCloudStorage()
@@ -766,7 +840,7 @@ def delete_photo(photo_id):
             if len(url_parts) > 3:
                 object_name = '/'.join(url_parts[3:])
                 cloud.delete_file(object_name)
-                logger.info(f"[OK] Файл удален из Yandex Cloud: {object_name}")
+                logger.info(f"[OK] Файл и метаданные удалены из Yandex Cloud: {object_name}")
         except Exception as e:
             logger.error(f"Error deleting from cloud: {e}")
         
